@@ -47,3 +47,19 @@ class TestRegistryClient:
         )
         with pytest.raises(IntegrationNetworkError, match="Network error"):
             self.client.get_app_info("BILLING")
+
+    @respx.mock
+    def test_registry_500_raises_integration_network_error(self):
+        respx.get(f"{REGISTRY_URL}/api/registry/apps/BILLING").mock(
+            return_value=httpx.Response(500, text="Internal Server Error")
+        )
+        with pytest.raises(IntegrationNetworkError, match="Registry error 500"):
+            self.client.get_app_info("BILLING")
+
+    @respx.mock
+    def test_registry_429_raises_integration_network_error(self):
+        respx.get(f"{REGISTRY_URL}/api/registry/apps/BILLING").mock(
+            return_value=httpx.Response(429, text="Too Many Requests")
+        )
+        with pytest.raises(IntegrationNetworkError, match="Registry error 429"):
+            self.client.get_app_info("BILLING")

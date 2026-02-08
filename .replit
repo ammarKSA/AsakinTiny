@@ -22,9 +22,9 @@ args = "Run Tests"
 name = "Run Tests"
 author = "agent"
 
-[[workflows.workflow.tasks]]
-task = "shell.exec"
-args = "python -m pytest -q"
-
 [workflows.workflow.metadata]
 outputType = "console"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "pip install \".[dev]\" && pytest -q"

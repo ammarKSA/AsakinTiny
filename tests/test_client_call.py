@@ -7,7 +7,7 @@ import respx
 
 from asakin_tiny.client import IntegrationClient, _CacheEntry
 from asakin_tiny.context import set_correlation_id
-from asakin_tiny.errors import AppInactiveError, IntegrationNetworkError
+from asakin_tiny.errors import AppInactiveError, IntegrationError, IntegrationNetworkError
 from asakin_tiny.models import AppInfo, AppStatus
 
 REGISTRY_URL = "https://registry.example.com"
@@ -127,5 +127,5 @@ class TestCall:
 
     def test_path_validation(self):
         client = _make_client()
-        with pytest.raises(ValueError, match="must start with '/'"):
+        with pytest.raises(IntegrationError, match="must start with '/'"):
             client.call(TARGET_CODE, "no-slash")

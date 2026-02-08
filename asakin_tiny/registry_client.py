@@ -23,5 +23,11 @@ class RegistryClient:
                 f"App '{code}' not found in the Asakin Registry."
             )
 
-        response.raise_for_status()
+        if not (200 <= response.status_code < 300):
+            body_snippet = response.text[:200] if response.text else ""
+            raise IntegrationNetworkError(
+                f"Registry error {response.status_code} for app_code={code} "
+                f"url={url} body={body_snippet}"
+            )
+
         return AppInfo.model_validate(response.json())

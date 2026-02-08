@@ -5,7 +5,7 @@ import httpx
 
 from .config import load_config
 from .context import ensure_correlation_id
-from .errors import AppInactiveError, IntegrationNetworkError
+from .errors import AppInactiveError, IntegrationError, IntegrationNetworkError
 from .models import AppInfo, AppStatus
 from .registry_client import RegistryClient
 
@@ -69,7 +69,7 @@ class IntegrationClient:
         timeout_seconds: Optional[int] = None,
     ) -> httpx.Response:
         if not path.startswith("/"):
-            raise ValueError(f"path must start with '/', got: '{path}'")
+            raise IntegrationError(f"path must start with '/', got: '{path}'")
 
         app_info = self.get_app(target_app_code)
         url = app_info.base_url.rstrip("/") + path

@@ -31,10 +31,13 @@ tests/
 - Synchronous API (v1 simplicity)
 - In-memory TTL cache for registry lookups
 - HTTP 4xx/5xx from target apps returned as-is (not converted to exceptions)
+- Registry non-2xx responses (except 404) raise IntegrationNetworkError (no raw httpx exceptions leak)
+- All library errors use IntegrationError hierarchy (no ValueError leaks)
 - Correlation ID propagation via contextvars
+- Build backend: setuptools (pyproject.toml)
 
 ## Running Tests
 ```bash
-python -m pytest -q
+pip install ".[dev]" && pytest -q
 ```
-Workflow "Run Tests" is configured to run `python -m pytest -q`.
+Workflow "Run Tests" is configured to run `pip install ".[dev]" && pytest -q`.
