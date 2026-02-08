@@ -1,11 +1,22 @@
 [project]
-name = "repl-nix-workspace"
-version = "0.1.0"
-description = "Add your description here"
+name = "asakin-tiny"
+version = "1.0.0"
+description = "Lightweight client library for inter-app communication in the Asakin platform"
 requires-python = ">=3.11"
 dependencies = [
     "httpx>=0.28.1",
     "pydantic>=2.12.5",
+]
+
+[project.optional-dependencies]
+dev = [
     "pytest>=9.0.2",
     "respx>=0.22.0",
 ]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.backends"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

@@ -5,3 +5,26 @@ expertMode = true
 [nix]
 channel = "stable-25_05"
 packages = ["libxcrypt"]
+
+[workflows]
+runButton = "Project"
+
+[[workflows.workflow]]
+name = "Project"
+mode = "parallel"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "Run Tests"
+
+[[workflows.workflow]]
+name = "Run Tests"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "python -m pytest -q"
+
+[workflows.workflow.metadata]
+outputType = "console"
