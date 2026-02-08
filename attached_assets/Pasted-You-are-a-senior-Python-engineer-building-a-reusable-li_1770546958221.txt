@@ -1,0 +1,198 @@
+You are a senior Python engineer building a reusable library project in Replit.
+
+Build a standalone project called **asakin-tiny** (Tiny v1). This project is a reusable client library that will be embedded/installed into multiple Asakin apps. It is NOT a web service.
+
+Goal:
+- Provide a single standard way for any Asakin host app to call another Asakin app by `app_code`.
+- Tiny resolves `app_code -> base_url + status` using the Asakin Registry service API.
+- Tiny does not implement business logic, orchestration, retries, logging, metrics, or schema transformation.
+
+========================================================
+1) Tech stack & constraints
+========================================================
+- Language: Python 3
+- HTTP client: httpx
+- Testing: pytest + respx (for mocking httpx calls)
+- Optional: pydantic for config/models (recommended)
+- Must be easy to install/consume from other Replit apps:
+  - Provide `pyproject.toml` (preferred) or requirements.txt
+  - Provide a README with copyable usage examples for FastAPI apps
+
+========================================================
+2) Package layout (clean and modular)
+========================================================
+Create this structure:
+
+asakin_tiny/
+  __init__.py
+  config.py
+  errors.py
+  models.py
+  context.py
+  registry_client.py
+  client.py
+tests/
+  test_config.py
+  test_registry_client.py
+  test_client_call.py
+README.md
+pyproject.toml
+.env.example
+
+In __init__.py, export the main public objects:
+- IntegrationClient
+- IntegrationError, IntegrationNetworkError, AppNotFoundError, AppInactiveError
+
+========================================================
+3) Public API contract (do NOT improvise)
+========================================================
+The library must expose:
+
+A) Exceptions (errors.py)
+- class IntegrationError(Exception): base for all Tiny errors
+- class IntegrationNetworkError(IntegrationError):
+    Used ONLY when a network-level problem occurs (DNS, timeout, connect error) while calling:
+    - the Registry OR the target app
+- class AppNotFoundError(IntegrationError): Registry returns 404 for app_code
+- class AppInactiveError(IntegrationError): Registry returns app info but status != ACTIVE
+
+Important rule:
+- HTTP 4xx/5xx returned by target apps must NOT be converted into IntegrationError.
+  They should be returned as normal HTTP responses to the host app.
+
+B) Data model (models.py)
+- AppStatus enum: ACTIVE, INACTIVE
+- AppInfo model:
+    code: str
+    name: str
+    base_url: str
+    status: AppStatus
+    description: Optional[str] = None
+
+C) Correlation ID context (context.py)
+Use contextvars to manage correlation id for the current request context:
+- get_correlation_id() -> Optional[str]
+- set_correlation_id(cid: str) -> None
+- ensure_correlation_id() -> str:
+    Returns existing correlation id if set, else generates a new UUID string and sets it.
+
+D) Configuration (config.py)
+Read from environment variables:
+Required:
+- ASAKIN_APP_CODE
+- ASAKIN_REGISTRY_URL
+Optional:
+- ASAKIN_TINY_CACHE_TTL_SECONDS (default 60)
+- ASAKIN_TINY_DEFAULT_TIMEOUT_SECONDS (default 10)
+
+Validation rules (strict):
+- ASAKIN_APP_CODE must match regex: ^[A-Z0-9_]{3,40}$
+- ASAKIN_REGISTRY_URL must start with http:// or https://
+
+If required env vars are missing or invalid:
+- raise a clear ValueError or custom IntegrationError with a helpful message.
+
+E) Registry client (registry_client.py)
+Implement a small internal helper:
+- class RegistryClient:
+    - init(registry_url: str, timeout_seconds: int)
+    - get_app_info(code: str) -> AppInfo
+Behavior:
+- Calls: GET {registry_url}/api/registry/apps/{code}
+- If 404: raise AppNotFoundError
+- If network error: raise IntegrationNetworkError
+- Parse JSON into AppInfo
+
+F) Main client (client.py)
+Implement:
+- class IntegrationClient:
+    - __init__(app_code: Optional[str]=None, registry_url: Optional[str]=None,
+              cache_ttl_seconds: int=60, default_timeout_seconds: int=10)
+      If app_code/registry_url are None, read from env via config.py.
+      Initialize an in-memory cache dict.
+
+    - get_app(code: str) -> AppInfo
+      Uses TTL cache:
+        cache: Dict[str, CacheEntry]
+        CacheEntry includes:
+          app_info: AppInfo
+          fetched_at: datetime
+      If cache missing/expired, call RegistryClient.get_app_info
+      If status != ACTIVE, raise AppInactiveError
+
+    - call(target_app_code: str, path: str, method: str="GET",
+           headers: Optional[dict]=None, params: Optional[dict]=None,
+           json: Any=None, data: Any=None, timeout_seconds: Optional[int]=None) -> httpx.Response
+      Behavior:
+      1) Validate path starts with "/"
+      2) Resolve target AppInfo via get_app(target_app_code)
+      3) Build full URL: base_url.rstrip("/") + path
+      4) Merge headers:
+         - include all provided headers (if any)
+         - set/override:
+           X-ASAKIN-CALLER = this client’s app_code
+           X-CORRELATION-ID = ensure_correlation_id()
+      5) Perform HTTP request using httpx with timeout:
+         - use timeout_seconds if provided else default_timeout_seconds
+      6) On network errors (connect/timeout/DNS): raise IntegrationNetworkError
+      7) On HTTP response: return response as-is (even for 4xx/5xx)
+
+Note: Keep Tiny v1 synchronous for simplicity.
+
+========================================================
+4) Tests (must be real and runnable)
+========================================================
+Write pytest tests using respx that cover:
+
+- Config validation:
+  - Missing ASAKIN_APP_CODE or ASAKIN_REGISTRY_URL -> initialization error
+  - Invalid app code format -> error
+  - Invalid registry URL scheme -> error
+
+- Registry client:
+  - Registry returns 404 -> AppNotFoundError
+  - Registry network failure -> IntegrationNetworkError
+  - Successful response parsed into AppInfo
+
+- IntegrationClient caching:
+  - Two get_app calls within TTL hit Registry once
+  - After TTL expires, it fetches again
+
+- Inactive app behavior:
+  - Registry returns status INACTIVE -> AppInactiveError thrown by get_app
+
+- call() behavior:
+  - Builds correct URL base_url + path
+  - Adds headers X-ASAKIN-CALLER and X-CORRELATION-ID
+  - If target returns 500 -> response returned (no exception)
+  - If target times out/connect error -> IntegrationNetworkError
+
+Keep tests deterministic and fast.
+
+========================================================
+5) Documentation
+========================================================
+Write README.md explaining:
+- What Tiny is and what it is NOT (no retries, no logging, no orchestration)
+- Required env vars:
+  - ASAKIN_APP_CODE
+  - ASAKIN_REGISTRY_URL
+- Usage example in a FastAPI app:
+  - how to create IntegrationClient
+  - how to call another app by code
+  - how to set/propagate correlation id (show simple FastAPI middleware snippet that sets context var from incoming header)
+
+Also include .env.example with the env vars and defaults.
+
+========================================================
+6) Replit run command
+========================================================
+This is a library project; provide a simple way to run tests:
+- Add instructions in README to run:
+  - `pytest -q`
+
+If Replit requires a run command, set it to run tests by default:
+- e.g. `pytest -q`
+
+========================================================
+Deliver the full Tiny v1 project now.
