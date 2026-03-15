@@ -7,6 +7,7 @@ import {
 } from "./errors.js";
 import { fetchWithTimeout } from "./http.js";
 import { RegistryClient } from "./registryClient.js";
+import { TokenClient } from "./tokenClient.js";
 import type { AppInfo, CallArgs, FetchLike } from "./types.js";
 
 interface CacheEntry {
@@ -25,6 +26,7 @@ export class IntegrationClient {
   private readonly defaultTimeoutMs: number;
   private readonly fetcher: FetchLike;
   private readonly registry: RegistryClient;
+  private readonly tokenClient: TokenClient;
   private readonly nowFn: () => number;
   private readonly cache = new Map<string, CacheEntry>();
 
@@ -38,6 +40,13 @@ export class IntegrationClient {
     this.registry = new RegistryClient({
       registryUrl: cfg.registryUrl,
       fetcher: this.fetcher,
+    });
+    this.tokenClient = new TokenClient({
+      registryUrl: cfg.registryUrl,
+      appKey: cfg.appKey,
+      appSecret: cfg.appSecret,
+      fetcher: this.fetcher,
+      now: this.nowFn,
     });
   }
 
@@ -95,43 +104,66 @@ export class IntegrationClient {
         args.headers?.["x-correlation-id"],
     );
 
-    const headers: Record<string, string> = { ...args.headers };
-    headers["X-ASAKIN-CALLER"] = this.appCode;
-    headers["X-CORRELATION-ID"] = correlationId;
-
     if (args.jsonBody !== undefined && args.body !== undefined) {
       throw new IntegrationError(
         "Cannot provide both jsonBody and body in the same call.",
       );
     }
 
-    let body: BodyInit | null | undefined = args.body;
+    let bodyContent: BodyInit | null | undefined = args.body;
+    const extraHeaders: Record<string, string> = {};
     if (args.jsonBody !== undefined) {
-      body = JSON.stringify(args.jsonBody);
-      if (!headers["Content-Type"] && !headers["content-type"]) {
-        headers["Content-Type"] = "application/json";
+      bodyContent = JSON.stringify(args.jsonBody);
+      if (
+        !args.headers?.["Content-Type"] &&
+        !args.headers?.["content-type"]
+      ) {
+        extraHeaders["Content-Type"] = "application/json";
       }
     }
 
     const timeoutMs = args.timeoutMs ?? this.defaultTimeoutMs;
+    const targetAppCode = args.targetAppCode;
 
-    try {
-      return await fetchWithTimeout(
+    const token = await this.tokenClient.getToken(targetAppCode, timeoutMs);
+
+    const buildHeaders = (tok: string): Record<string, string> => ({
+      ...args.headers,
+      ...extraHeaders,
+      "X-ASAKIN-CALLER": this.appCode,
+      "X-CORRELATION-ID": correlationId,
+      "Authorization": `Bearer ${tok}`,
+    });
+
+    const doFetch = async (tok: string): Promise<Response> => {
+      return fetchWithTimeout(
         this.fetcher,
         fullUrl,
         {
           method: args.method ?? "GET",
-          headers,
-          body: body ?? null,
+          headers: buildHeaders(tok),
+          body: bodyContent ?? null,
         },
         timeoutMs,
       );
+    };
+
+    try {
+      let response = await doFetch(token);
+
+      if (response.status === 401) {
+        this.tokenClient.invalidate(targetAppCode);
+        const freshToken = await this.tokenClient.getToken(targetAppCode, timeoutMs);
+        response = await doFetch(freshToken);
+      }
+
+      return response;
     } catch (err) {
       if (err instanceof IntegrationError) {
         throw err;
       }
       throw new IntegrationNetworkError(
-        `Network error calling app '${args.targetAppCode}' at ${fullUrl}`,
+        `Network error calling app '${targetAppCode}' at ${fullUrl}`,
         { cause: err },
       );
     }

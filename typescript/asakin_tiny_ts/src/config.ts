@@ -5,6 +5,8 @@ const APP_CODE_RE = /^[A-Z0-9_]{3,40}$/;
 export interface TinyConfig {
   appCode: string;
   registryUrl: string;
+  appKey: string;
+  appSecret: string;
   cacheTtlSeconds: number;
   defaultTimeoutMs: number;
 }
@@ -12,6 +14,8 @@ export interface TinyConfig {
 export interface ConfigOverrides {
   appCode?: string;
   registryUrl?: string;
+  appKey?: string;
+  appSecret?: string;
   cacheTtlSeconds?: number;
   defaultTimeoutMs?: number;
 }
@@ -20,6 +24,8 @@ export function loadConfigFromEnv(overrides?: ConfigOverrides): TinyConfig {
   const appCode = overrides?.appCode ?? process.env.ASAKIN_APP_CODE ?? "";
   const registryUrl =
     overrides?.registryUrl ?? process.env.ASAKIN_REGISTRY_URL ?? "";
+  const appKey = overrides?.appKey ?? process.env.ASAKIN_APP_KEY ?? "";
+  const appSecret = overrides?.appSecret ?? process.env.ASAKIN_APP_SECRET ?? "";
   const cacheTtlSeconds =
     overrides?.cacheTtlSeconds ??
     (process.env.ASAKIN_TINY_CACHE_TTL_SECONDS
@@ -51,6 +57,16 @@ export function loadConfigFromEnv(overrides?: ConfigOverrides): TinyConfig {
       `ASAKIN_REGISTRY_URL '${registryUrl}' is invalid. It must start with http:// or https://.`,
     );
   }
+  if (!appKey) {
+    throw new IntegrationError(
+      "ASAKIN_APP_KEY is required. Set it as an environment variable or pass it as appKey.",
+    );
+  }
+  if (!appSecret) {
+    throw new IntegrationError(
+      "ASAKIN_APP_SECRET is required. Set it as an environment variable or pass it as appSecret.",
+    );
+  }
 
-  return { appCode, registryUrl, cacheTtlSeconds, defaultTimeoutMs };
+  return { appCode, registryUrl, appKey, appSecret, cacheTtlSeconds, defaultTimeoutMs };
 }
